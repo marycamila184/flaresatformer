@@ -1,0 +1,28 @@
+# Ignore image files
+*.tiff
+*.tif
+*.TIF
+*.gif
+
+# Ignore Python cache files
+__pycache__/
+flaresatformer.egg-info
+
+# Ignore virtual environment
+venv/
+env/
+
+# Ignore model and dataset files
+*.keras
+*.h5
+*.hdf5
+*.pth
+*.gz
+*.tar
+*.zip
+*.json
+*.xml
+
+# Ignore temporary files and logs
+*.log
+.DS_Store  # For macOS users
