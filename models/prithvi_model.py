@@ -1,5 +1,5 @@
 import torch.nn as nn
-from terratorch.models import PrithviModel
+from terratorch.models import PrithviModelFactory
 
 
 class PrithviSegmentation(nn.Module):
@@ -10,9 +10,11 @@ class PrithviSegmentation(nn.Module):
     ):
         super().__init__()
 
-        self.model = PrithviModel(
-            backbone="prithvi_eo_v2",
+        factory = PrithviModelFactory()
+
+        self.model = factory.create(
             task="segmentation",
+            backbone="prithvi_eo_v2",
             num_classes=1,
             in_channels=in_channels,
         )

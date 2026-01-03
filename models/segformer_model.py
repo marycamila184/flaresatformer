@@ -191,7 +191,8 @@ class SegFormerB0(nn.Module):
             nn.Linear(c, 256) for c in [32, 64, 160, 256]
         ])
 
-        self.fuse = nn.Conv2d(256 * 4, 256, kernel_size=1)
+        # self.fuse = nn.Conv2d(256 * 4, 256, kernel_size=1)
+        self.fuse = nn.Sequential(nn.Linear(256 * 4, 256),nn.GELU())
         self.pred = nn.Conv2d(256, num_classes, kernel_size=1)
 
     def forward(self, x):

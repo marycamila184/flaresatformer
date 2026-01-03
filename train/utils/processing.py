@@ -11,10 +11,6 @@ def load_image(file_path, n_channels, target_size=None, bands=[]):
         img = img[:, :, :]
     else:
         img = img[:, :, bands]
-    
-    if target_size:
-        target_shape = (target_size[0], target_size[1], n_channels)
-        img = resize(img, target_shape, preserve_range=True, anti_aliasing=True)
 
     return img
 

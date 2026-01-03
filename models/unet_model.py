@@ -4,6 +4,7 @@ import torch.nn as nn
 
 
 class ConvBlock(nn.Module):
+    
     def __init__(self, in_ch, out_ch, kernel_size=3, batch_norm=True):
         super().__init__()
         padding = kernel_size // 2

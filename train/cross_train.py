@@ -16,6 +16,8 @@ from train.utils.cross_split import create_folds
 from train.utils.dataset import ImageMaskDataset
 from train.utils.metrics import compute_metrics 
 
+from train.utils.plots import show_sample
+
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 EPOCHS = 100
@@ -34,8 +36,10 @@ images_flare, images_urban, images_wildfire = create_folds(
     flare_patches, urban_patches, wildfire_patches, NUM_FOLDS
 )
 
-list_models = ["unet", "segformer", "prithvi"]
-dict_channels = [(1, 5, 6), (4, 5, 6), (3, 4, 5, 6), ()]
+#list_models = ["unet", "segformer", "prithvi"]
+#dict_channels = [(1, 5, 6), (4, 5, 6), (3, 4, 5, 6), ()]
+list_models = ["unet"]
+dict_channels = [(1, 5, 6)]
 
 # Train
 for model_name in list_models:
@@ -73,7 +77,7 @@ for model_name in list_models:
                 bands=list(dict_bands),
                 image_size=IMAGE_SIZE,
                 target_resize=IMAGE_SIZE,
-                augment=True,
+                augment=False,
             )
 
             val_ds = ImageMaskDataset(
@@ -85,6 +89,9 @@ for model_name in list_models:
                 target_resize=IMAGE_SIZE,
                 augment=False,
             )
+
+            # show_sample(train_ds, idx=12, title="TRAIN")
+            # show_sample(val_ds, idx=12, title="VAL")
 
             train_loader = DataLoader(
                 train_ds, batch_size=BATCH_SIZE, shuffle=True, num_workers=4
@@ -114,7 +121,7 @@ for model_name in list_models:
             history = []
 
             band_str = "".join(str(b) for b in dict_bands) if dict_bands else "all"
-            ckpt_name = f"{model_name}_b{band_str}_fold{fold+1}.pth"
+            ckpt_name = f"{model_name}_b{band_str}_fold{fold + 1}.pth"
             ckpt_path = os.path.join(OUTPUT_DIR, ckpt_name)
 
             # Epochs
@@ -133,7 +140,7 @@ for model_name in list_models:
 
                     train_loss += loss.item()
 
-                # Vaklidation
+                # Validation
                 model.eval()
                 val_loss = 0.0
                 all_preds, all_targets = [], []
@@ -142,10 +149,14 @@ for model_name in list_models:
                     for imgs, masks in val_loader:
                         imgs, masks = imgs.to(DEVICE), masks.to(DEVICE)
                         logits = model(imgs)
+
+                        if masks.sum() == 0:
+                            print("Batch with no 1 entries")
+
                         loss = criterion(logits, masks)
 
                         val_loss += loss.item()
-                        all_preds.append(torch.sigmoid(logits))
+                        all_preds.append(logits)
                         all_targets.append(masks)
 
                 preds = torch.cat(all_preds)
@@ -165,18 +176,25 @@ for model_name in list_models:
                 # Checkpoint
                 if f1 > best_f1:
                     best_f1 = f1
-                    torch.save(model.state_dict(), ckpt_path)
+                    torch.save(
+                        {
+                            "epoch": epoch + 1,
+                            "model_state_dict": model.state_dict(),
+                            "optimizer_state_dict": optimizer.state_dict(),
+                            "best_f1": best_f1,
+                        },
+                        ckpt_path,
+                    )
 
                 print(
                     f"Epoch {epoch+1} | "
+                    f"Val Loss: {val_loss:.4f} | "
                     f"Val F1: {f1:.4f} | "
                     f"Precision: {precision:.4f} | "
                     f"Recall: {recall:.4f}"
                 )
 
-            # ---------
-            # SAVE CSVs
-            # ---------
+
             hist_df = pd.DataFrame(history)
             hist_df["fold"] = fold + 1
 

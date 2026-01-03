@@ -7,6 +7,7 @@ import utils.processing as processing
 random.seed(42)
 
 class ImageMaskDataset(Dataset):
+
     def __init__(
         self,
         n_channels,
@@ -38,19 +39,15 @@ class ImageMaskDataset(Dataset):
         image = self.process_image(img_path)
         mask = self.process_mask(mask_path)
 
-        if self.augment:
-            image, mask = self.apply_augmentation(image, mask)
+        # Ensure mask is HW
+        if mask.ndim == 3:
+            mask = mask.squeeze()
 
-        # Convert to torch tensors
-        # Image: HWC → CHW
         image = torch.from_numpy(image).float().permute(2, 0, 1)
-
-        # Mask: HWC or HW → 1HW
-        if mask.ndim == 2:
-            mask = mask[..., None]
-        mask = torch.from_numpy(mask).float().permute(2, 0, 1)
+        mask = torch.from_numpy(mask).float().unsqueeze(0)
 
         return image, mask
+
 
     def process_image(self, path):
         return processing.load_image(
@@ -60,19 +57,9 @@ class ImageMaskDataset(Dataset):
             target_size=self.target_resize
         )
 
+
     def process_mask(self, path):
         return processing.load_mask(
             path,
             target_size=self.target_resize
         )
-
-    def apply_augmentation(self, image, mask):
-        if random.random() > 0.5:
-            image = np.fliplr(image).copy()
-            mask = np.fliplr(mask).copy()
-
-        if random.random() > 0.5:
-            image = np.flipud(image).copy()
-            mask = np.flipud(mask).copy()
-
-        return image, mask
