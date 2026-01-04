@@ -16,6 +16,7 @@ class PrithviSegmentation(nn.Module):
             task="segmentation",
             backbone="prithvi_eo_v2",
             num_classes=1,
+            bands=[],
             in_channels=in_channels,
         )
 

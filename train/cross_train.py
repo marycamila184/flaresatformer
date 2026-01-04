@@ -38,8 +38,8 @@ images_flare, images_urban, images_wildfire = create_folds(
 
 #list_models = ["unet", "segformer", "prithvi"]
 #dict_channels = [(1, 5, 6), (4, 5, 6), (3, 4, 5, 6), ()]
-list_models = ["unet"]
-dict_channels = [(1, 5, 6)]
+list_models = ["segformer"]
+dict_channels = [(1, 5, 6), (4, 5, 6), (3, 4, 5, 6), ()]
 
 # Train
 for model_name in list_models:
