@@ -39,12 +39,14 @@ class ImageMaskDataset(Dataset):
         image = self.process_image(img_path)
         mask = self.process_mask(mask_path)
 
-        # Ensure mask is HW
-        if mask.ndim == 3:
-            mask = mask.squeeze()
-
         image = torch.from_numpy(image).float().permute(2, 0, 1)
-        mask = torch.from_numpy(mask).float().unsqueeze(0)
+        mask = torch.from_numpy(mask).float()
+
+        # Ensure mask is (1, H, W)
+        if mask.ndim == 3:      # (H, W, 1)
+            mask = mask.permute(2, 0, 1)
+        elif mask.ndim == 2:    # (H, W)
+            mask = mask.unsqueeze(0)
 
         return image, mask
 

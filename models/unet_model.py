@@ -1,4 +1,4 @@
-from models.utils.binary_focal_loss import BinaryFocalLoss
+from models.utils.dice_focal_loss import BinaryFocalLoss
 import torch
 import torch.nn as nn
 

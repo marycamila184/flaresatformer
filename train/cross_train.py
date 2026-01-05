@@ -5,11 +5,11 @@ import torch
 from torch.utils.data import DataLoader
 
 from sklearn.model_selection import train_test_split
+from transformers import get_cosine_schedule_with_warmup
 from tqdm import tqdm
 
-from models.utils.binary_focal_loss import BinaryFocalLoss
-from models.prithvi_model import PrithviSegmentation
-from models.segformer_model import SegFormerB0
+from models.utils.dice_focal_loss import BinaryFocalLoss, FocalDiceLoss
+from models.segformer_model import SegFormer
 from models.unet_model import UNet
 
 from train.utils.cross_split import create_folds
@@ -37,9 +37,9 @@ images_flare, images_urban, images_wildfire = create_folds(
 )
 
 #list_models = ["unet", "segformer", "prithvi"]
-#dict_channels = [(1, 5, 6), (4, 5, 6), (3, 4, 5, 6), ()]
+#dict_channels = [(1, 5, 6), (4, 5, 6), (3, 4, 5, 6)]
 list_models = ["segformer"]
-dict_channels = [(1, 5, 6), (4, 5, 6), (3, 4, 5, 6), ()]
+dict_channels = [(1, 5, 6)]
 
 # Train
 for model_name in list_models:
@@ -68,7 +68,7 @@ for model_name in list_models:
                 shuffle=True,
             )
 
-            n_channels = len(dict_bands) if len(dict_bands) > 0 else 10
+            n_channels = len(dict_bands) if len(dict_bands) > 0 else 7 # Excluded B8, B10 and B11 as they are not compatible with HLS and Prithvi model. 
 
             train_ds = ImageMaskDataset(
                 image_list=train_p,
@@ -106,16 +106,28 @@ for model_name in list_models:
                 model = UNet(in_channels=n_channels).to(DEVICE)
 
             elif model_name == "segformer":
-                model = SegFormerB0(in_channels=n_channels).to(DEVICE)
+                model = SegFormer(in_channels=n_channels, model_type='B0').to(DEVICE)
 
-            elif model_name == "prithvi":
-                model = PrithviSegmentation(
-                    in_channels=n_channels,
-                    freeze_backbone=True
-                ).to(DEVICE)
 
-            optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
-            criterion = BinaryFocalLoss()
+            if model_name == "unet":
+                model = UNet(in_channels=n_channels).to(DEVICE)
+                optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
+                criterion = BinaryFocalLoss(alpha=0.25, gamma=2.0)
+                scheduler = None  # UNet will not use scheduler
+
+            elif model_name == "segformer":
+                model = SegFormer(in_channels=n_channels, model_type='B0').to(DEVICE)
+                optimizer = torch.optim.AdamW(model.parameters(), lr=5e-4)
+                criterion = FocalDiceLoss(alpha=0.25, gamma=2.0, dice_weight=1.0)
+
+                num_training_steps = EPOCHS * len(train_loader)
+                num_warmup_steps = int(0.1 * num_training_steps)
+
+                scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                    optimizer,
+                    T_max=EPOCHS,  # Number of epochs for a full cosine cycle
+                    eta_min=1e-6   # Minimum learning rate
+                )
 
             best_f1 = 0.0
             history = []
@@ -123,6 +135,9 @@ for model_name in list_models:
             band_str = "".join(str(b) for b in dict_bands) if dict_bands else "all"
             ckpt_name = f"{model_name}_b{band_str}_fold{fold + 1}.pth"
             ckpt_path = os.path.join(OUTPUT_DIR, ckpt_name)
+
+            best_val_f1 = 0.0
+            best_threshold = 0.5
 
             # Epochs
             for epoch in range(EPOCHS):
@@ -162,8 +177,10 @@ for model_name in list_models:
                 preds = torch.cat(all_preds)
                 targets = torch.cat(all_targets)
 
-                precision, recall, f1 = compute_metrics(preds, targets)
+                threshold = 0.5
+                precision, recall, f1 = compute_metrics(preds, targets, threshold=threshold)
 
+                # Save metrics in history
                 history.append({
                     "epoch": epoch + 1,
                     "train_loss": train_loss / len(train_loader),
@@ -173,26 +190,34 @@ for model_name in list_models:
                     "val_f1": f1,
                 })
 
-                # Checkpoint
-                if f1 > best_f1:
-                    best_f1 = f1
+                # Checkpoint if best
+                if f1 > best_val_f1:
+                    best_val_f1 = f1
+                    best_threshold = threshold
+
                     torch.save(
                         {
                             "epoch": epoch + 1,
                             "model_state_dict": model.state_dict(),
                             "optimizer_state_dict": optimizer.state_dict(),
-                            "best_f1": best_f1,
+                            "best_f1": best_val_f1,
+                            "best_threshold": best_threshold,
                         },
                         ckpt_path,
                     )
 
+                # Print metrics
                 print(
                     f"Epoch {epoch+1} | "
                     f"Val Loss: {val_loss:.4f} | "
                     f"Val F1: {f1:.4f} | "
                     f"Precision: {precision:.4f} | "
-                    f"Recall: {recall:.4f}"
+                    f"Recall: {recall:.4f} | "
+                    f"Threshold: {threshold:.2f}"
                 )
+
+                if scheduler is not None:
+                    scheduler.step()
 
 
             hist_df = pd.DataFrame(history)

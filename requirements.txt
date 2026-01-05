@@ -8,6 +8,7 @@ timm
 segmentation-models-pytorch
 terratorch
 torchgeo
+transformers
 pytorch-lightning
 torchmetrics
 wandb

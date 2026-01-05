@@ -1,4 +1,4 @@
-from models.utils.binary_focal_loss import BinaryFocalLoss
+from models.utils.dice_focal_loss import BinaryFocalLoss
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -20,7 +20,7 @@ class DropPath(nn.Module):
 
 
 class EfficientMultiHeadAttention(nn.Module):
-    def __init__(self, dim, num_heads, sr_ratio=1, dropout=0.0):
+    def __init__(self, dim, num_heads, sr_ratio=1, dropout=0.05):
         super().__init__()
         assert dim % num_heads == 0
 
@@ -69,8 +69,22 @@ class EfficientMultiHeadAttention(nn.Module):
         return x
 
 
+class SEBlock(nn.Module):
+    def __init__(self, channels, reduction=16):
+        super().__init__()
+        self.fc = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Conv2d(channels, channels // reduction, 1),
+            nn.ReLU(),
+            nn.Conv2d(channels // reduction, channels, 1),
+            nn.Sigmoid()
+        )
+    def forward(self, x):
+        return x * self.fc(x)
+    
+
 class MixFFN(nn.Module):
-    def __init__(self, dim, ff_dim, dropout=0.0):
+    def __init__(self, dim, ff_dim, dropout=0.1):
         super().__init__()
         self.fc1 = nn.Linear(dim, ff_dim)
         self.dwconv = nn.Conv2d(ff_dim, ff_dim, 3, padding=1, groups=ff_dim)
@@ -119,6 +133,8 @@ class OverlapPatchEmbed(nn.Module):
         self.norm = nn.LayerNorm(embed_dim)
 
     def forward(self, x):
+        assert x.dim() == 4, f"PatchEmbed expected BCHW, got {x.shape}"
+
         x = self.proj(x)
         B, C, H, W = x.shape
         x = x.flatten(2).transpose(1, 2)
@@ -126,99 +142,173 @@ class OverlapPatchEmbed(nn.Module):
         return x, H, W
 
 
-class SegFormerB0Encoder(nn.Module):
-    def __init__(self, in_channels):
+class SegFormerEncoder(nn.Module):
+    def __init__(self, in_channels, model_type='B0'):
         super().__init__()
 
-        embed_dims = [32, 64, 160, 256]
-        depths = [2, 2, 2, 2]
-        num_heads = [1, 2, 5, 8]
-        sr_ratios = [8, 4, 2, 1]
-        mlp_ratios = [4, 4, 4, 4]
+        # Configurações por tipo de modelo
+        configs = {
+            'B0': {
+                 'embed_dims': [32, 64, 160, 256],
+                'depths': [2, 2, 2, 2],
+                'num_heads': [1, 2, 5, 8],
+                'sr_ratios': [8, 4, 2, 1],
+                'mlp_ratios': [4, 4, 4, 4],
+            },
+            'B1': {
+                'embed_dims': [64, 128, 320, 512],
+                'depths': [2, 2, 2, 2],
+                'num_heads': [1, 2, 5, 8],
+                'sr_ratios': [8, 4, 2, 1],
+                'mlp_ratios': [4, 4, 4, 4],
+            }
+        }
+
+        assert model_type in configs, f"model_type deve ser um de {list(configs.keys())}"
+        
+        config = configs[model_type]
+        embed_dims = config['embed_dims']
+        depths = config['depths']
+        num_heads = config['num_heads']
+        sr_ratios = config['sr_ratios']
+        mlp_ratios = config['mlp_ratios']
 
         self.stages = nn.ModuleList()
-        cur = 0
+
         dpr = torch.linspace(0, 0.1, sum(depths)).tolist()
+        #dpr = torch.linspace(0, 0.05, sum(depths)).tolist()
+
+        cur = 0
 
         for i in range(4):
-            patch = OverlapPatchEmbed(
-                in_channels if i == 0 else embed_dims[i-1],
-                embed_dims[i],
-                patch_size=7 if i == 0 else 3,
-                stride=4 if i == 0 else 2
+            # Overlapping patch embedding
+            patch_embed = OverlapPatchEmbed(
+                in_ch=in_channels if i == 0 else embed_dims[i - 1],
+                embed_dim=embed_dims[i],
+                patch_size=4 if i == 0 else 3,
+                stride=3 if i == 0 else 2
             )
 
+            # Transformer blocks
             blocks = nn.ModuleList([
                 TransformerBlock(
-                    embed_dims[i],
-                    num_heads[i],
-                    embed_dims[i] * mlp_ratios[i],
-                    sr_ratios[i],
-                    dpr[cur + j]
+                    dim=embed_dims[i],
+                    num_heads=num_heads[i],
+                    ff_dim=embed_dims[i] * mlp_ratios[i],
+                    sr_ratio=sr_ratios[i],
+                    drop_path=dpr[cur + j],
                 )
                 for j in range(depths[i])
             ])
 
             cur += depths[i]
+
             self.stages.append(nn.ModuleDict({
-                "patch": patch,
-                "blocks": blocks
+                "patch": patch_embed,
+                "blocks": blocks,
             }))
 
+        self.embed_dims = embed_dims
+
     def forward(self, x):
+        """
+        Args:
+            x: (B, C, H, W)
+        Returns:
+            features: list of 4 feature maps
+        """
         features = []
+
         for stage in self.stages:
-            x, H, W = stage["patch"](x)
+            # Patch embedding -> tokens
+            x, H, W = stage["patch"](x)  # (B, HW, C)
+
+            # Transformer blocks
             for blk in stage["blocks"]:
                 x = blk(x, H, W)
+
+            # Tokens -> feature map (B, C, H, W)
             B, N, C = x.shape
-            features.append(x.transpose(1, 2).reshape(B, C, H, W))
+            x = x.transpose(1, 2).reshape(B, C, H, W)
+
+            features.append(x)
+
         return features
 
 
-class SegFormerB0(nn.Module):
-    def __init__(
-        self,
-        in_channels: int,
-        num_classes: int = 1,
-    ):
+class SegFormer(nn.Module):
+    def __init__(self, in_channels, num_classes=1, model_type='B0', decoder_dim=384, se_reduction=16):
         super().__init__()
 
-        self.encoder = SegFormerB0Encoder(in_channels)
+        # -------- Encoder --------
+        self.encoder = SegFormerEncoder(in_channels, model_type=model_type)
+        embed_dims = self.encoder.embed_dims
 
-        # projection layers for multi-scale features
+        # -------- Decoder (MLP head) --------
         self.proj = nn.ModuleList([
-            nn.Linear(c, 256) for c in [32, 64, 160, 256]
+            nn.Linear(embed_dims[0], decoder_dim),
+            nn.Linear(embed_dims[1], decoder_dim),
+            nn.Linear(embed_dims[2], decoder_dim),
+            nn.Linear(embed_dims[3], decoder_dim),
         ])
 
-        # self.fuse = nn.Conv2d(256 * 4, 256, kernel_size=1)
-        self.fuse = nn.Sequential(nn.Linear(256 * 4, 256),nn.GELU())
-        self.pred = nn.Conv2d(256, num_classes, kernel_size=1)
+        # Fuse conv layers for gradual upsampling and SE
+        self.fuse3 = nn.Sequential(
+            nn.Conv2d(decoder_dim * 2, decoder_dim, 3, padding=1),
+            nn.BatchNorm2d(decoder_dim),
+            nn.ReLU(inplace=True),
+        )
+        self.se3 = SEBlock(decoder_dim, reduction=se_reduction)
+
+        self.fuse2 = nn.Sequential(
+            nn.Conv2d(decoder_dim * 2, decoder_dim, 3, padding=1),
+            nn.BatchNorm2d(decoder_dim),
+            nn.ReLU(inplace=True),
+        )
+
+        self.se2 = SEBlock(decoder_dim, reduction=se_reduction)
+
+        self.fuse1 = nn.Sequential(
+            nn.Conv2d(decoder_dim * 2, decoder_dim, 3, padding=1),
+            nn.BatchNorm2d(decoder_dim),
+            nn.ReLU(inplace=True),
+        )
+        self.se1 = SEBlock(decoder_dim, reduction=se_reduction)
+
+        self.pred = nn.Conv2d(decoder_dim, num_classes, kernel_size=1)
 
     def forward(self, x):
-        input_h, input_w = x.shape[2:]
+            B, _, H, W = x.shape
+            feats = self.encoder(x)  # list of 4 feature maps: [stage0, stage1, stage2, stage3]
 
-        feats = self.encoder(x)  # list of feature maps
+            # Project each stage to decoder_dim
+            proj_feats = []
+            for f, proj in zip(feats, self.proj):
+                b, c, h, w = f.shape
+                f = f.flatten(2).transpose(1, 2)  # (B, HW, C)
+                f = proj(f)                        # (B, HW, decoder_dim)
+                f = f.transpose(1, 2).reshape(b, -1, h, w)
+                proj_feats.append(f)
 
-        H, W = feats[0].shape[2:]
+            # Gradual fusion (UNet style)
+            x = F.interpolate(proj_feats[3], size=proj_feats[2].shape[2:], mode="bilinear", align_corners=False)
+            x = torch.cat([x, proj_feats[2]], dim=1)
+            x = self.fuse3(x)
+            x = self.se3(x)
 
-        outs = []
-        for f, proj in zip(feats, self.proj):
-            B, C, h, w = f.shape
+            x = F.interpolate(x, size=proj_feats[1].shape[2:], mode="bilinear", align_corners=False)
+            x = torch.cat([x, proj_feats[1]], dim=1)
+            x = self.fuse2(x)
+            x = self.se2(x)
 
-            f = f.flatten(2).transpose(1, 2)      # (B, HW, C)
-            f = proj(f)                           # (B, HW, 256)
-            f = f.transpose(1, 2).reshape(B, 256, h, w)
+            x = F.interpolate(x, size=proj_feats[0].shape[2:], mode="bilinear", align_corners=False)
+            x = torch.cat([x, proj_feats[0]], dim=1)
+            x = self.fuse1(x)
+            x = self.se1(x)
 
-            f = F.interpolate(
-                f, size=(H, W), mode="bilinear", align_corners=False
-            )
-            outs.append(f)
+            x = self.pred(x)
 
-        x = self.fuse(torch.cat(outs, dim=1))
-        x = self.pred(x)
+            # Restore original input resolution
+            x = F.interpolate(x, size=(H, W), mode="bilinear", align_corners=False)
 
-        # restore input resolution
-        return F.interpolate(
-            x, size=(input_h, input_w), mode="bilinear", align_corners=False
-        )
+            return x
