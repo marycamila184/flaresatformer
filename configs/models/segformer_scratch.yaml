@@ -1,0 +1,5 @@
+model:
+  name: segformer_scratch
+  pretrained: false
+train:
+  batch_size: 16

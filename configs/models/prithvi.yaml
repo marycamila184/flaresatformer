@@ -1,0 +1,9 @@
+model:
+  name: prithvi
+  norm: prithvi
+  lora_r: 16
+  lora_alpha: 32
+  freeze_encoder: false              # fallback if LoRA does not fit in 8 GB
+  grad_checkpointing: true
+train:
+  batch_size: 4

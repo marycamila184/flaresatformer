@@ -1,0 +1,4 @@
+model:
+  name: swin_unet
+train:
+  batch_size: 8

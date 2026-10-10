@@ -26,3 +26,8 @@ env/
 # Ignore temporary files and logs
 *.log
 .DS_Store  # For macOS users
+# Experiment outputs (only results/ is versioned)
+outputs/
+
+# Plan execution scratch
+.superpowers/
