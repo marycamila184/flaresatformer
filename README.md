@@ -72,8 +72,6 @@ Transformers downsample by 4–16× before attention, which can erase a 1–3 pi
 - **Statistics:** mean ± std over seeds. 95% confidence intervals of ΔF1 vs. UNet come from a cluster bootstrap over test path/rows.
 - **Secondary experiments:** a learning curve (10/25/50/100% of the training data) for UNet, SegFormer and Prithvi.
 
-The full design is in [`docs/superpowers/specs/2026-10-09-flaresatformer-2.0-design.md`](docs/superpowers/specs/2026-10-09-flaresatformer-2.0-design.md).
-
 ---
 
 ## Reproducing
