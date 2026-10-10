@@ -101,3 +101,35 @@ def test_collect_patch_stats_one_row_per_patch_and_threshold():
     assert list(df.threshold_name) == ["t050", "tuned"]
     assert df.iloc[0][["tp", "fp", "fn"]].tolist() == [1, 1, 1]
     assert df.iloc[0].tiff_file == "a"
+
+
+def test_resume_is_exact_with_worker_processes_and_augmentation(tmp_path):
+    from flaresatformer.data.dataset import FlareDataset
+    from flaresatformer.run import _loader
+
+    rng = np.random.default_rng(0)
+    images = rng.standard_normal((12, 3, 16, 16)).astype(np.float16)
+    masks = (images[:, 2:3] > 1.0).astype(np.uint8)
+
+    def loaders(seed):
+        gen = torch.Generator().manual_seed(seed)
+        train_ds = FlareDataset(images, masks, np.arange(12), [0.0] * 3, [1.0] * 3, augment=True)
+        val_ds = FlareDataset(images, masks, np.arange(12), [0.0] * 3, [1.0] * 3)
+        return _loader(train_ds, 4, 2, shuffle=True, generator=gen), _loader(val_ds, 4, 2), gen
+
+    set_seed(0)
+    a = Tiny()
+    train, val, gen = loaders(0)
+    fit(a, train, val, _cfg(epochs=4), tmp_path / "a", CPU, gen)
+
+    set_seed(0)
+    b = Tiny()
+    train, val, gen = loaders(0)
+    fit(b, train, val, _cfg(epochs=4), tmp_path / "b", CPU, gen, stop_after=2)
+    set_seed(123)
+    resumed = Tiny()
+    train, val, gen = loaders(999)
+    fit(resumed, train, val, _cfg(epochs=4), tmp_path / "b", CPU, gen)
+
+    for pa, pb in zip(a.state_dict().values(), resumed.state_dict().values()):
+        torch.testing.assert_close(pa, pb)

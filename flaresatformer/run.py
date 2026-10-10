@@ -47,8 +47,9 @@ def _check_or_write_config(cfg, run_info, run_dir):
 
 
 def _loader(dataset, batch_size, num_workers, shuffle=False, generator=None):
+    # No persistent workers: worker seeds are re-drawn from `generator` every epoch, so a resumed run matches exactly.
     return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, drop_last=shuffle, generator=generator,
-                      num_workers=num_workers, pin_memory=torch.cuda.is_available(), persistent_workers=num_workers > 0)
+                      num_workers=num_workers, pin_memory=torch.cuda.is_available())
 
 
 def run_experiment(cfg, fold, seed, frac=1.0, run_dir=None, tag=None, smoke=False, evaluate_test=True):
