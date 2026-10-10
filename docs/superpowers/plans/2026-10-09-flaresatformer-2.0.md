@@ -545,7 +545,7 @@ def test_subsample_is_nested_and_keeps_val_and_test(frames):
 
 def test_real_csvs_parse_and_split():
     df = load_sources(REPO_ROOT / "dataset")
-    assert len(df) == 11504 + 683 + 265
+    assert len(df) == 11505 + 683 + 265
     first = make_fold_frames(df)[0]
     val_share = (first.role == "val").sum() / (first.role != "test").sum()
     assert 0.05 < val_share < 0.2
@@ -2925,7 +2925,7 @@ if __name__ == "__main__":
 - [ ] **Step 5: Generate the README figure.** Pick a flare patch with a clearly visible flare (20–80 mask pixels, low cloud). Run `python -m scripts.make_readme_figure --tiff ... --mask ...`. Open the PNG and check that the flare is obvious and the ring is centered. Then `git rm assets/active_fire_1.png`.
 
 - [ ] **Step 6: Rewrite `README.md`.** Keep the intro and the Araucária photo. Replace the rest with:
-  - **Dataset table:** real counts (11,504 flare patches from 83 countries in 6 continents, 683 urban, 265 fire; 256×256×10, bands B1–B7, B9, B10, B11), with the new figure.
+  - **Dataset table:** real counts (11,505 flare patches from 83 countries in 6 continents, 683 urban, 265 fire; 256×256×10, bands B1–B7, B9, B10, B11), with the new figure.
   - **Models table:** the 6 models plus pretraining, as in spec §4.2.
   - **Protocol summary:** splits, loss, optimizer, lr search, seeds, metrics, bootstrap.
   - **Reproduction:** venv, `make_splits`, `build_cache`, `train --smoke`, `run_queue` by priority, `aggregate`, `infer`.

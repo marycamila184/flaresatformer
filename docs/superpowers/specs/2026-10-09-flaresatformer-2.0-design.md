@@ -29,7 +29,7 @@ Refazer o experimento do FlareSatFormer como uma comparação rigorosa e reprodu
 
 | Fonte | Patches | Máscara | Agrupamento disponível |
 |---|---|---|---|
-| Flare (`dataset/flare_dataset.csv`) | 11.504 | 0/255, cerca de 14 px positivos por patch | `continent`, `cntry_name` (83 países); cena e path/row extraídos do nome do arquivo (`fire_LC8PPPRRRYYYYDDD...`) |
+| Flare (`dataset/flare_dataset.csv`) | 11.505 | 0/255, cerca de 14 px positivos por patch | `continent`, `cntry_name` (83 países); cena e path/row extraídos do nome do arquivo (`fire_LC8PPPRRRYYYYDDD...`) |
 | Urbano (`dataset/urban_dataset.csv`) | 683 | Toda zero (negativo difícil) | `city` (239 cidades) |
 | Fogo (`dataset/fire_dataset.csv`) | 265 | Toda zero (negativo difícil) | Path/row extraído do nome do arquivo (`LC08_L1TP_PPPRRR_...`) |
 
@@ -231,7 +231,7 @@ O smoke test na GPU (`--smoke` para os 6 modelos) é executado antes da priorida
 
 ## 11. Documentação
 
-- O README é reescrito ao final, com os números reais (11.504 patches de flare, 83 países, 683 urbanos, 265 de fogo), o pipeline novo (splits → cache → fila → avaliação → agregação) e as instruções de reprodução.
+- O README é reescrito ao final, com os números reais (11.505 patches de flare, 83 países, 683 urbanos, 265 de fogo), o pipeline novo (splits → cache → fila → avaliação → agregação) e as instruções de reprodução.
 - O `infer.py` é atualizado para carregar um treino de `outputs/` e gerar RGB, B7 e predição.
 
 ## 12. Fora de escopo
