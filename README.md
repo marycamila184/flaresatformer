@@ -4,12 +4,6 @@
 
 **FlareSatFormer** is a deep-learning project for **gas flare segmentation** in **Landsat 8** imagery. Oil and gas operations flare gas for safety reasons. At large scale, flaring is a significant source of greenhouse gas emissions, so it needs accurate and scalable monitoring.
 
-<p align="center">
-  <img src="assets/gas_flare_araucaria.png" alt="Gas Flare" width="100%">
-  <br>
-  <em>Gas flaring at the REPAR (Refinaria Presidente Getúlio Vargas) facility in Araucária, Paraná, Brazil.</em>
-</p>
-
 Version 2.0 is a controlled comparison of a CNN baseline against transformers and an Earth-observation foundation model. Flares are **subpixel targets**: a 256 × 256 patch contains about 14 flare pixels (0.02%). The question is whether attention-based models help on targets this small, given a fair protocol.
 
 It extends **FlareSat** (<https://github.com/marycamila184/flaresat>), which is the reference baseline.
