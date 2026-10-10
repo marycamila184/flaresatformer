@@ -1,6 +1,5 @@
 import os
-from models.prithvi_model import PrithviSegmentation
-from models.segformer_model import SegFormerB0
+from models.segformer_model import SegFormer
 from models.unet_model import UNet
 import torch
 
@@ -14,7 +13,7 @@ from train.utils.dataset import ImageMaskDataset
 from train.utils.metrics import compute_metrics
 
 
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+DEVICE = "cpu"
 
 THRESHOLD = 0.5
 NUM_FOLDS = 4
@@ -24,20 +23,19 @@ BATCH_SIZE = 8
 
 model_name_map = {
     "unet": "UNet",
-    "segformer": "SegFormer-B0",
-    "prithvi": "Prithvi",
+    "segformer": "SegFormer-B0"
 }
 
 channels_readable = {
     "156": "2, 6 e 7",
-    "456": "5, 6 e 7",
-    "3456": "4, 5, 6 e 7",
-    "10": "1 a 10",
+    #"456": "5, 6 e 7",
+    #"3456": "4, 5, 6 e 7",
+    #"10": "1 a 10",
 }
 
-list_models = ["unet", "segformer", "prithvi"]
-list_bands = [[1, 5, 6], [4, 5, 6], [3, 4, 5, 6], []]
-path_channels = ["156", "456", "3456", "10"]
+list_models = ["unet", "segformer"]
+list_bands = [[1, 5, 6]]
+path_channels = ["156"]
 
 
 flare_patches = pd.read_csv("dataset/flare_dataset.csv")
@@ -63,7 +61,7 @@ for model_name in list_models:
             "Bands": channels_readable[path_channels[idx]],
         }
 
-        for fold in range(NUM_FOLDS):
+        for fold in tqdm(range(NUM_FOLDS), desc=f"Evaluating {model_name}"):
             print(f"Evaluating {model_name} | Bands {bands} | Fold {fold+1}")
 
             # Model
@@ -71,16 +69,15 @@ for model_name in list_models:
                 model = UNet(in_channels=n_channels)
 
             elif model_name == "segformer":
-                model = SegFormerB0(in_channels=n_channels)
-
-            elif model_name == "prithvi":
-                model = PrithviSegmentation(in_channels=n_channels)
+                model = SegFormer(in_channels=n_channels, model_type='B0')
 
             model.to(DEVICE)
 
             ckpt_name = f"{model_name}_b{path_channels[idx]}_fold{fold+1}.pth"
-            ckpt_path = os.path.join(OUTPUT_DIR, ckpt_name)
-            model.load_state_dict(torch.load(ckpt_path, map_location=DEVICE))
+            ckpt_path = os.path.join(OUTPUT_DIR, model_name, f"fold_{fold+1}", ckpt_name)
+            checkpoint = torch.load(ckpt_path, map_location=DEVICE)
+            model.load_state_dict(checkpoint["model_state_dict"])
+            
             model.eval()
 
             # Test Split

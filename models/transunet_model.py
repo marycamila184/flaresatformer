@@ -1,29 +1,33 @@
 import torch
 import torch.nn as nn
 
-# ---------------------
-# CNN Block
-# ---------------------
+
 class ConvBlock(nn.Module):
-    def __init__(self, in_ch, out_ch, kernel_size=3, batch_norm=True):
+    def __init__(self, in_ch, out_ch, kernel_size=3, batch_norm=True, dropout=0.1):
         super().__init__()
         padding = kernel_size // 2
         layers = [nn.Conv2d(in_ch, out_ch, kernel_size, padding=padding)]
         if batch_norm:
             layers.append(nn.BatchNorm2d(out_ch))
         layers.append(nn.ReLU(inplace=True))
+
+        if dropout > 0:
+            layers.append(nn.Dropout2d(dropout))  # Spatial Dropout
+
         layers += [nn.Conv2d(out_ch, out_ch, kernel_size, padding=padding)]
         if batch_norm:
             layers.append(nn.BatchNorm2d(out_ch))
         layers.append(nn.ReLU(inplace=True))
+
+        if dropout > 0:
+            layers.append(nn.Dropout2d(dropout))
+
         self.block = nn.Sequential(*layers)
 
     def forward(self, x):
         return self.block(x)
 
-# ---------------------
-# Transformer Block (ViT-style)
-# ---------------------
+
 class TransformerBlock(nn.Module):
     def __init__(self, embed_dim, num_heads, mlp_ratio=4, dropout=0.1):
         super().__init__()
@@ -46,42 +50,57 @@ class TransformerBlock(nn.Module):
         x = x + self.mlp(self.norm2(x))
         return x
 
-# ---------------------
-# TransUNet
-# ---------------------
+
 class TransUNet(nn.Module):
+
+    def _init_weights(self):
+        # Initialize Conv2d and Linear layers
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.LayerNorm):
+                nn.init.ones_(m.weight)
+                nn.init.zeros_(m.bias)
+
+
     def __init__(self,
                  in_channels=3,
                  base_filters=32,
                  embed_dim=256,
                  num_heads=8,
                  num_layers=4,
-                 dropout=0.1,
+                 dropout=0.05,
                  out_channels=1):
         super().__init__()
 
         # Encoder (CNN)
         self.c1 = ConvBlock(in_channels, base_filters)
         self.p1 = nn.MaxPool2d(2)
-        self.d1 = nn.Dropout(dropout)
+        self.d1 = nn.Dropout2d(dropout)
 
         self.c2 = ConvBlock(base_filters, base_filters*2)
         self.p2 = nn.MaxPool2d(2)
-        self.d2 = nn.Dropout(dropout)
+        self.d2 = nn.Dropout2d(dropout)
 
         self.c3 = ConvBlock(base_filters*2, base_filters*4)
         self.p3 = nn.MaxPool2d(2)
-        self.d3 = nn.Dropout(dropout)
+        self.d3 = nn.Dropout2d(dropout)
 
         self.c4 = ConvBlock(base_filters*4, base_filters*8)
         self.p4 = nn.MaxPool2d(2)
-        self.d4 = nn.Dropout(dropout)
+        self.d4 = nn.Dropout2d(dropout)
 
         # Bottleneck Conv → transformer embedding
         self.c5 = ConvBlock(base_filters*8, embed_dim)
 
-        # Positional embedding (dynamic, paper-style)
-        self.pos_embed = None
+        self.pos_embed =  nn.Parameter(torch.zeros(1, 16*16, embed_dim))
+        nn.init.trunc_normal_(self.pos_embed, std=0.02)
+
         self.transformer_blocks = nn.ModuleList([
             TransformerBlock(embed_dim, num_heads, dropout=dropout) for _ in range(num_layers)
         ])
@@ -90,22 +109,21 @@ class TransUNet(nn.Module):
         # Decoder
         self.u6 = nn.ConvTranspose2d(embed_dim, base_filters*8, 2, stride=2)
         self.c6 = ConvBlock(base_filters*16, base_filters*8)
-        self.d6 = nn.Dropout(dropout)
 
         self.u7 = nn.ConvTranspose2d(base_filters*8, base_filters*4, 2, stride=2)
         self.c7 = ConvBlock(base_filters*8, base_filters*4)
-        self.d7 = nn.Dropout(dropout)
 
         self.u8 = nn.ConvTranspose2d(base_filters*4, base_filters*2, 2, stride=2)
         self.c8 = ConvBlock(base_filters*4, base_filters*2)
-        self.d8 = nn.Dropout(dropout)
 
         self.u9 = nn.ConvTranspose2d(base_filters*2, base_filters, 2, stride=2)
         self.c9 = ConvBlock(base_filters*2, base_filters)
-        self.d9 = nn.Dropout(dropout)
 
         self.out = nn.Conv2d(base_filters, out_channels, 1)
 
+        self._init_weights()
+
+    
     def forward(self, x):
         # Encoder
         c1 = self.c1(x)
@@ -117,12 +135,7 @@ class TransUNet(nn.Module):
         # Flatten and add positional embedding
         B, C, H, W = c5.shape
         x_seq = c5.flatten(2).transpose(1, 2)  # B x N x C
-        N = x_seq.size(1)
-        if self.pos_embed is None or self.pos_embed.size(1) != N:
-            # Create learnable pos embedding for this feature map size
-            self.pos_embed = nn.Parameter(torch.zeros(1, N, C, device=c5.device))
-            nn.init.trunc_normal_(self.pos_embed, std=0.02)
-        x_seq = x_seq + self.pos_embed
+        x_seq = x_seq + self.pos_embed  # Fixed positional embedding
 
         # Transformer
         for blk in self.transformer_blocks:
@@ -130,19 +143,20 @@ class TransUNet(nn.Module):
 
         # Reshape back to CNN feature map
         c5 = x_seq.transpose(1, 2).view(B, C, H, W)
-        c5 = self.dropout(c5)
+        c5 = self.dropout(c5)  # Bottleneck dropout
 
         # Decoder
         u6 = self.u6(c5)
-        c6 = self.c6(self.d6(torch.cat([u6, c4], dim=1)))
+        c6 = self.c6(torch.cat([u6, c4], dim=1))
 
         u7 = self.u7(c6)
-        c7 = self.c7(self.d7(torch.cat([u7, c3], dim=1)))
+        c7 = self.c7(torch.cat([u7, c3], dim=1))
 
         u8 = self.u8(c7)
-        c8 = self.c8(self.d8(torch.cat([u8, c2], dim=1)))
+        c8 = self.c8(torch.cat([u8, c2], dim=1))
 
         u9 = self.u9(c8)
-        c9 = self.c9(self.d9(torch.cat([u9, c1], dim=1)))
+        c9 = self.c9(torch.cat([u9, c1], dim=1))
 
         return self.out(c9)
+

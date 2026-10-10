@@ -8,6 +8,7 @@ from sklearn.model_selection import train_test_split
 from transformers import get_cosine_schedule_with_warmup
 from tqdm import tqdm
 
+from models.transunet_model import TransUNet
 from models.utils.dice_focal_loss import BinaryFocalLoss, FocalDiceLoss
 from models.segformer_model import SegFormer
 from models.unet_model import UNet
@@ -36,9 +37,9 @@ images_flare, images_urban, images_wildfire = create_folds(
     flare_patches, urban_patches, wildfire_patches, NUM_FOLDS
 )
 
-#list_models = ["unet", "segformer", "prithvi"]
+#list_models = ["unet", "segformer", "transunet"]
 #dict_channels = [(1, 5, 6), (4, 5, 6), (3, 4, 5, 6)]
-list_models = ["segformer"]
+list_models = ["transunet"]
 dict_channels = [(1, 5, 6)]
 
 # Train
@@ -108,26 +109,19 @@ for model_name in list_models:
             elif model_name == "segformer":
                 model = SegFormer(in_channels=n_channels, model_type='B0').to(DEVICE)
 
+            elif model_name == "transunet":
+                model = TransUNet(in_channels=n_channels).to(DEVICE)
 
-            if model_name == "unet":
-                model = UNet(in_channels=n_channels).to(DEVICE)
-                optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
-                criterion = BinaryFocalLoss(alpha=0.25, gamma=2.0)
-                scheduler = None  # UNet will not use scheduler
-
-            elif model_name == "segformer":
-                model = SegFormer(in_channels=n_channels, model_type='B0').to(DEVICE)
-                optimizer = torch.optim.AdamW(model.parameters(), lr=5e-4)
-                criterion = FocalDiceLoss(alpha=0.25, gamma=2.0, dice_weight=1.0)
-
-                num_training_steps = EPOCHS * len(train_loader)
-                num_warmup_steps = int(0.1 * num_training_steps)
-
-                scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-                    optimizer,
-                    T_max=EPOCHS,  # Number of epochs for a full cosine cycle
-                    eta_min=1e-6   # Minimum learning rate
-                )
+            optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
+            criterion = BinaryFocalLoss(alpha=0.25, gamma=2.0)
+            scheduler = None
+         
+            # if model_name == "transunet":
+            #     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            #         optimizer,
+            #         T_max=EPOCHS,  # Number of epochs for a full cosine cycle
+            #         eta_min=1e-5   # Minimum learning rates
+            #     )
 
             best_f1 = 0.0
             history = []

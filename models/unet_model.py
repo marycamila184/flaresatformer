@@ -25,6 +25,7 @@ class ConvBlock(nn.Module):
 
         self.block = nn.Sequential(*layers)
 
+
     def forward(self, x):
         return self.block(x)
 
