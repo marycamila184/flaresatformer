@@ -1,6 +1,7 @@
 [project]
 name = "flaresatformer"
-version = "0.1.0"
+version = "2.0.0"
+requires-python = ">=3.12"
 dependencies = []
 
 [build-system]
@@ -8,7 +9,10 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = [
-    "models*",
-    "train*"
-]
+include = ["flaresatformer*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = ["slow: needs pretrained weight downloads or long CPU time"]
+addopts = "-m 'not slow'"

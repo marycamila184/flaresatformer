@@ -1,0 +1,38 @@
+paths:
+  data_root: .                       # CSV paths (dataset/...) are relative to this folder
+  dataset_dir: dataset
+  splits_dir: splits
+  cache_dir: ~/.cache/flaresatformer
+  outputs_dir: outputs
+  results_dir: results
+
+data:
+  bands: b267                        # b267 = B2, B6, B7 | hls6 = B2..B7
+  num_workers: 4
+
+model:
+  pretrained: true
+  frh: true
+  norm: dataset                      # dataset | prithvi
+  grad_checkpointing: false
+
+train:
+  epochs: 80
+  patience: 15
+  effective_batch_size: 16
+  batch_size: 16                     # physical batch; models override, accumulation fills the rest
+  lr: 3.0e-4
+  lr_tuned: false                    # set true after priority 0 picks the lr
+  encoder_lr_mult: 0.1
+  weight_decay: 0.01
+  warmup_frac: 0.05
+  grad_clip: 1.0
+  amp: true
+  focal_alpha: 0.25
+  focal_gamma: 2.0
+  dice_weight: 1.0
+
+eval:
+  batch_size: 16
+  object_tolerance: 1
+  thresholds: {start: 0.05, stop: 0.95, step: 0.05}

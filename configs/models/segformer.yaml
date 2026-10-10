@@ -1,0 +1,4 @@
+model:
+  name: segformer
+train:
+  batch_size: 16

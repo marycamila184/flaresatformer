@@ -1,0 +1,6 @@
+model:
+  name: unet
+  pretrained: false
+  frh: false
+train:
+  batch_size: 16

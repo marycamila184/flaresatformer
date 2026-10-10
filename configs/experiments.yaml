@@ -1,0 +1,13 @@
+models: [unet, segformer, segformer_scratch, swin_unet, transunet, prithvi]
+folds: [1, 2, 3, 4]
+experiments:
+  # P0: lr search on the validation split of fold 1 only (test fold untouched)
+  - {priority: 0, kind: lr_search, models: all, folds: [1], seeds: [1], lrs: [1.0e-4, 3.0e-4, 1.0e-3], epochs: 30}
+  # P1/P2: main comparison, 3 seeds
+  - {priority: 1, models: all, seeds: [1]}
+  - {priority: 2, models: all, seeds: [2, 3]}
+  # P3: Prithvi with all six HLS bands, SegFormer without the full-resolution head
+  - {priority: 3, models: [prithvi], seeds: [1], tag: hls6, overrides: {data: {bands: hls6}}}
+  - {priority: 3, models: [segformer], seeds: [1], tag: nofrh, overrides: {model: {frh: false}}}
+  # P4: learning curve (100% comes from P1)
+  - {priority: 4, models: [unet, segformer, prithvi], seeds: [1], fracs: [0.1, 0.25, 0.5]}
